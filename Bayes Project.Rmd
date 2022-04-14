@@ -1,0 +1,114 @@
+---
+title: "Bayesian Methods Project"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, we call the necessary libraries and import that dataset.  See the dataset dictionary for more information on the variables. By looking at the summary, we can observe scale of the variables.
+
+```{r}
+library(rethinking)
+library(readxl)
+set.seed(0)
+
+df<-read_xlsx("C:/Users/Ronceria/Desktop/HappyAlcohol.xlsx")
+df<-data.frame(df)
+summary(df)
+```
+
+In order for MAP to function at its best, variables should be standardized.  The scale function takes subtracts the mean of the variable from the observation, and divides it by the standard deviation of the variable. 
+
+```{r, echo=FALSE}
+df$HDI.s = scale(df$HDI)
+df$GDP_PerCapita.s = scale(df$GDP_PerCapita)
+df$Beer_PerCapita.s = scale(df$Beer_PerCapita)
+df$Wine_PerCapita.s = scale(df$Wine_PerCapita)
+df$Spirit_PerCapita.s = scale(df$Spirit_PerCapita)
+```
+
+Now our question stands, is alcohol consumption of a country a good predictor of its respective happiness score? We propose the first model, which is solely the beer, wine, and spirit consumption variables.
+
+For our priors we would would guess that alpha have a prior of N(5,1). This is from observation of the summary above. As for bb, bs, bw, since they have been scaled, we would expect the range of betas to be 0 mean, with a standard deviation of 1. This the same justification for other MAPs from now on.
+
+```{r}
+mod0 <- map(
+  alist(
+    HappinessScore ~ dnorm(mu, sigma),
+    mu <- a + bb * Beer_PerCapita.s + bs * Spirit_PerCapita.s + bw * Wine_PerCapita.s,
+    a ~ dnorm(5,1),
+    bb ~ dnorm(0, 1),
+    bs ~ dnorm(0, 1),
+    bw ~ dnorm(0, 1),
+    sigma ~ dunif(0,2)
+  ),
+  data = df
+)
+```
+
+We can observe that beer and wine appear to be significant predictors, but as spirit contains 0 in the 89% interval, it may not be the best predictor to include. 
+
+```{r}
+precis(mod0)
+plot(precis(mod0))
+```
+
+Now we would like to ask is if the relationship is spurious at best. For this, we propose a model with no consumption variables.
+```{r}
+mod1 <- map(
+  alist(
+    HappinessScore ~ dnorm(mu, sigma),
+    mu <- a + bHDI * HDI.s + bGDP * GDP_PerCapita.s,
+    a ~ dnorm(5,1),
+    bHDI ~ dnorm(0, 1),
+    bGDP ~ dnorm(0, 1),
+    sigma ~ dunif(0, 2)
+  ),
+  data = df
+)
+```
+
+We see that this model that the credible interval estimates are stronger in this model as reflected in the sigma estimate and estimates of standard deviations of the parameters. Is there a cofounding effect? Let us put our attention to the sigma estimate of our next model, which will include all the variables.
+```{r}
+precis(mod1)
+plot(precis(mod1))
+```
+As we can see, sigma barely improved by adding the new variables. This indicates that the relationship is spurious at best.
+```{r}
+mod2 <- map(
+  alist(
+    HappinessScore ~ dnorm(mu, sigma),
+    mu <- a + bb * Beer_PerCapita.s + bs * Spirit_PerCapita.s + bw * Wine_PerCapita.s + bHDI * HDI.s + bGDP * GDP_PerCapita.s,
+    a ~ dnorm(5,1),
+    bb ~ dnorm(0, 1),
+    bs ~ dnorm(0, 1),
+    bw ~ dnorm(0, 1),
+    bHDI ~ dnorm(0, 1),
+    bGDP ~ dnorm(0, 1),
+    sigma ~ dunif(0, 2)
+  ),
+  data = df
+)
+
+precis(mod2)
+plot(precis(mod2))
+```
+
+Now spirit and beer consumption are weak, but wine is stronger predictors. However, our sigma estimate only reduced by 0.02, further contributing to the stance that indeed a country's alcohol consumption per capita is not a good predictor of its happiness score.
+
+For the final nail in the coffin, we use WAIC to create an ensemble model of all the proposed models. Notice that that mod0, the model with only alcohol consumption per capita, there is no weight assigned to it. Again, another reason to conclude the aformentioned.
+
+On a final note, observe how the estimates change across each model.
+
+```{r}
+(models<-compare(mod0, mod1, mod2))
+
+plot(coeftab(mod0,mod1,mod2))
+```
+While we realize there are many ways we could tune a model to improve predictive power, we would like to remind the audience of our base question:"Does alcohol consumption per capita predict the happiness score of a country"? Our answer: Most likely not.
